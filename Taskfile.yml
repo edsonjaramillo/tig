@@ -5,6 +5,7 @@ vars:
   MAIN: .
   BIN_DIR: ~/.local/bin
   EXECUTABLE: tig
+  VERSION: '{{.VERSION | default "dev"}}'
 tasks:
   default:
     cmd: go run {{.MAIN}} {{.CLI_ARGS}}
@@ -12,7 +13,7 @@ tasks:
   build:
     cmds:
       - mkdir -p {{.BIN_DIR}}
-      - go build -ldflags="-s -w -X github.com/edsonjaramillo/tig/internal/application.Version={{.VERSION}}" -o {{.BIN_DIR}}/{{.EXECUTABLE}} {{.MAIN}}
+      - go build -ldflags="-s -w -X main.Version={{.VERSION}}" -o {{.BIN_DIR}}/{{.EXECUTABLE}} {{.MAIN}}
     silent: true
   test:
     cmd: go test ./...

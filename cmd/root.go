@@ -12,7 +12,8 @@ var rootCmd = &cobra.Command{
 	Long:  "",
 }
 
-func Execute() {
+func Execute(version string) {
+	rootCmd.Version = version
 	err := rootCmd.Execute()
 	if err != nil {
 		os.Exit(1)
