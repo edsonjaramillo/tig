@@ -8,8 +8,12 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "tig",
-	Short: "",
-	Long:  "",
+	Short: "A CLI of helpers for git and gh workflows",
+	Long: `tig is a command-line companion for git and the GitHub CLI (gh).
+
+It wraps common git and gh workflows into simple helper commands,
+so everyday tasks like branching, committing, syncing, and working
+with pull requests take fewer keystrokes.`,
 }
 
 func Execute(version string) {
