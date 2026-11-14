@@ -22,7 +22,7 @@ already exists. The existing file content is left untouched.`,
 			if err := config.AppendStarterKeep(path); err != nil {
 				return err
 			}
-			outf(cmd.OutOrStdout(), "added a keep section to %s\nedit it with `tig keep edit`\n", path)
+			outf(cmd.OutOrStdout(), "added a keep section to %s\nedit it with `tig config edit`\n", path)
 			return nil
 		},
 	}

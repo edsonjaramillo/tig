@@ -19,8 +19,8 @@ func TestResolve(t *testing.T) {
 		{"https://example.com/a/b", "ssh", "a/b", "https://example.com/a/b"},
 	}
 	for _, tt := range tests {
-		r := KeptRepo{Repo: tt.repo}
-		if err := r.resolveRepo(tt.protocol); err != nil {
+		var r KeptRepo
+		if err := r.resolveRepo(tt.repo, tt.protocol); err != nil {
 			t.Errorf("resolveRepo(%q, %q): %v", tt.repo, tt.protocol, err)
 			continue
 		}

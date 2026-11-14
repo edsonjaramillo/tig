@@ -31,10 +31,6 @@ Failed repos are always shown.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if len(repos) == 0 {
-				outln(cmd.ErrOrStderr(), "the keep list is empty; add repos with `tig keep edit`")
-				return nil
-			}
 			results := keep.Run(cmd.Context(), repos, f.jobs, keep.StatusOp(fetch), nil)
 			results, hidden := filterStatus(results, dirty, outOfSync)
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)

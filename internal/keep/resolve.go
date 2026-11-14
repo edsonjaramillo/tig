@@ -11,20 +11,20 @@ import (
 )
 
 // resolveRepo derives Name, CloneURL, and Remote from the repo field.
-func (r *KeptRepo) resolveRepo(protocol string) error {
-	if git.IsURL(r.Repo) {
-		remote, err := git.ParseURL(r.Repo)
+func (r *KeptRepo) resolveRepo(repo, protocol string) error {
+	if git.IsURL(repo) {
+		remote, err := git.ParseURL(repo)
 		if err != nil {
 			return err
 		}
 		name := remote.Name()
 		if name == "" {
-			return fmt.Errorf("cannot derive owner/repo from %q", r.Repo)
+			return fmt.Errorf("cannot derive owner/repo from %q", repo)
 		}
-		r.Remote, r.Name, r.CloneURL = remote, name, r.Repo
+		r.Remote, r.Name, r.CloneURL = remote, name, repo
 		return nil
 	}
-	remote, err := git.ParseShorthand(r.Repo)
+	remote, err := git.ParseShorthand(repo)
 	if err != nil {
 		return err
 	}

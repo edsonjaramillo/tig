@@ -20,9 +20,16 @@ import (
 	"github.com/edsonjaramillo/tig/internal/keep"
 )
 
-// Config is the root of the tig config file.
-type Config struct {
+// file is the root of the tig config file. It is the one struct the file is
+// strictly decoded into; every feature registers its top-level key here.
+type file struct {
 	Keep keep.KeepList `yaml:"keep"`
+}
+
+// Config is the resolved tig config.
+type Config struct {
+	// Keep holds the kept repos declared in the keep list, in file order.
+	Keep []keep.KeptRepo
 }
 
 // ErrNotFound is returned by Load when the config file does not exist.
@@ -31,27 +38,40 @@ var ErrNotFound = errors.New("tig config not found")
 // Path resolves the config file location: flag, then $TIG_CONFIG, then
 // $XDG_CONFIG_HOME/tig.yaml, then ~/.config/tig.yaml (on every platform).
 func Path(flag string) (string, error) {
+	p, _, err := Locate(flag)
+	return p, err
+}
+
+// Locate is Path that also reports which rule chose the path.
+func Locate(flag string) (path, source string, err error) {
 	if flag != "" {
-		return filepath.Abs(flag)
+		p, err := filepath.Abs(flag)
+		return p, "--config", err
 	}
 	if p := os.Getenv("TIG_CONFIG"); p != "" {
-		return filepath.Abs(p)
+		p, err := filepath.Abs(p)
+		return p, "$TIG_CONFIG", err
 	}
-	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" && filepath.IsAbs(x) {
-		return filepath.Join(x, "tig.yaml"), nil
+	x := os.Getenv("XDG_CONFIG_HOME")
+	if x != "" && filepath.IsAbs(x) {
+		return filepath.Join(x, "tig.yaml"), "$XDG_CONFIG_HOME", nil
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("locating tig config: %w", err)
+		return "", "", fmt.Errorf("locating tig config: %w", err)
 	}
-	return filepath.Join(home, ".config", "tig.yaml"), nil
+	source = "default"
+	if x != "" {
+		source = "default; $XDG_CONFIG_HOME is ignored because it is not absolute"
+	}
+	return filepath.Join(home, ".config", "tig.yaml"), source, nil
 }
 
 // Load reads, strictly decodes, and validates the config at path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w at %s (create one with `tig keep init`)", ErrNotFound, path)
+		return nil, fmt.Errorf("%w at %s (create one with `tig keep init` or `tig config edit`)", ErrNotFound, path)
 	}
 	if err != nil {
 		return nil, err
@@ -59,18 +79,30 @@ func Load(path string) (*Config, error) {
 	return Parse(data, path)
 }
 
-// Parse strictly decodes and validates config data. name is used in errors.
+// Parse strictly decodes, validates, and resolves config data. name is used
+// in errors.
 func Parse(data []byte, name string) (*Config, error) {
-	var cfg Config
+	var f file
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+	if err := dec.Decode(&f); err != nil {
+		if errors.Is(err, io.EOF) {
+			return &Config{}, nil
+		}
 		return nil, fmt.Errorf("%s:\n%w", name, humanize(err))
 	}
-	if err := cfg.Keep.Validate(); err != nil {
+	var extra yaml.Node
+	if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return nil, fmt.Errorf("%s:\n%w", name, err)
+		}
+		return nil, fmt.Errorf("%s:\nline %d: only one YAML document is allowed (remove the extra \"---\")", name, extra.Line)
+	}
+	repos, err := f.Keep.Resolve()
+	if err != nil {
 		return nil, fmt.Errorf("%s: invalid config:\n%w", name, err)
 	}
-	return &cfg, nil
+	return &Config{Keep: repos}, nil
 }
 
 // PermissionWarning returns a warning when the config file is group- or

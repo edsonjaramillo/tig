@@ -73,13 +73,13 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func kept(t *testing.T, r KeptRepo) KeptRepo {
+func kept(t *testing.T, s keptRepoSpec) KeptRepo {
 	t.Helper()
-	list := KeepList{Repos: []KeptRepo{r}}
-	if err := list.Validate(); err != nil {
+	repos, err := KeepList{Repos: []keptRepoSpec{s}}.Resolve()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return list.Repos[0]
+	return repos[0]
 }
 
 func TestCloneLifecycle(t *testing.T) {
@@ -87,7 +87,7 @@ func TestCloneLifecycle(t *testing.T) {
 	ctx := context.Background()
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "code", "proj")
-	r := kept(t, KeptRepo{
+	r := kept(t, keptRepoSpec{
 		Repo:        rem.url,
 		Destination: dest,
 		PostClone:   []string{`printf '%s %s' "$TIG_REPO_NAME" "$TIG_DEFAULT_BRANCH" > hook.out`},
@@ -128,7 +128,7 @@ func TestCloneNoHooksAndBranch(t *testing.T) {
 	gitT(t, rem.work, "push", "-q", "origin", "dev")
 
 	dest := filepath.Join(t.TempDir(), "proj")
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest, Branch: "dev", PostClone: []string{"touch hook.out"}})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest, Branch: "dev", PostClone: []string{"touch hook.out"}})
 	res := CloneOp(Options{NoHooks: true})(ctx, r)
 	if res.Outcome != Cloned {
 		t.Fatalf("clone = %+v", res)
@@ -146,7 +146,7 @@ func TestCloneHookFailureThenHooks(t *testing.T) {
 	ctx := context.Background()
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "proj")
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest, PostClone: []string{"echo checking", "test -f ok", "touch done"}})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest, PostClone: []string{"echo checking", "test -f ok", "touch done"}})
 
 	res := CloneOp(Options{})(ctx, r)
 	if !res.Failed() || res.Detail != "cloned, hook failed" || res.Hint != "run: tig keep hooks me/proj" {
@@ -184,7 +184,7 @@ func TestCloneRefusesForeignDestination(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(plain, "keep.txt"), "mine")
-	res := CloneOp(Options{})(ctx, kept(t, KeptRepo{Repo: rem.url, Destination: plain}))
+	res := CloneOp(Options{})(ctx, kept(t, keptRepoSpec{Repo: rem.url, Destination: plain}))
 	if !res.Failed() || !strings.Contains(res.Err.Error(), "not a git checkout") {
 		t.Fatalf("plain dir = %+v", res)
 	}
@@ -195,13 +195,13 @@ func TestCloneRefusesForeignDestination(t *testing.T) {
 	// A checkout of a different repo.
 	wrong := filepath.Join(t.TempDir(), "wrong")
 	gitT(t, "", "clone", "-q", other.url, wrong)
-	res = CloneOp(Options{})(ctx, kept(t, KeptRepo{Repo: rem.url, Destination: wrong}))
+	res = CloneOp(Options{})(ctx, kept(t, keptRepoSpec{Repo: rem.url, Destination: wrong}))
 	if !res.Failed() || !strings.Contains(res.Err.Error(), "expected") {
 		t.Fatalf("wrong origin = %+v", res)
 	}
 
 	// Status reports the same failure.
-	res = StatusOp(false)(ctx, kept(t, KeptRepo{Repo: rem.url, Destination: wrong}))
+	res = StatusOp(false)(ctx, kept(t, keptRepoSpec{Repo: rem.url, Destination: wrong}))
 	if !res.Failed() {
 		t.Fatalf("status of wrong origin = %+v", res)
 	}
@@ -212,7 +212,7 @@ func TestStatusAndPull(t *testing.T) {
 	ctx := context.Background()
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "proj")
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest, PostPull: []string{"touch pulled.out"}})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest, PostPull: []string{"touch pulled.out"}})
 
 	if res := StatusOp(false)(ctx, r); res.Status.Worktree != "missing" || res.Status.Sync.String() != "" || res.Failed() {
 		t.Fatalf("missing status = %+v %+v", res, res.Status)
@@ -305,7 +305,7 @@ func TestDefaultBranchSetHead(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "proj")
 	gitT(t, "", "clone", "-q", rem.url, dest)
 	gitT(t, dest, "remote", "set-head", "origin", "--delete")
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest})
 
 	if b, err := DefaultBranch(ctx, r, false); b != "" || err != nil {
 		t.Fatalf("offline default branch = %q, %v", b, err)
@@ -323,7 +323,7 @@ func TestRunOp(t *testing.T) {
 	ctx := context.Background()
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "proj")
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest})
 
 	if res := RunOp(Options{}, []string{"pwd"}, false)(ctx, r); res.Outcome != Skipped {
 		t.Fatalf("run missing = %+v", res)
@@ -347,7 +347,7 @@ func TestRunOpShell(t *testing.T) {
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "proj")
 	gitT(t, "", "clone", "-q", rem.url, dest)
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest})
 
 	res := RunOp(Options{}, []string{"echo", "$TIG_REPO_NAME", "|", "tr", "a-z", "A-Z"}, true)(ctx, r)
 	if res.Outcome != Ran || res.Output != "ME/PROJ\n" {
@@ -365,7 +365,7 @@ func TestHooksOpPostPull(t *testing.T) {
 	rem := newRemote(t, "me", "proj")
 	dest := filepath.Join(t.TempDir(), "proj")
 	gitT(t, "", "clone", "-q", rem.url, dest)
-	r := kept(t, KeptRepo{Repo: rem.url, Destination: dest, PostClone: []string{"touch clone.out"}, PostPull: []string{"touch pull.out"}})
+	r := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest, PostClone: []string{"touch clone.out"}, PostPull: []string{"touch pull.out"}})
 
 	if res := HooksOp(Options{}, PostPull)(ctx, r); res.Outcome != HooksRan || res.Failed() {
 		t.Fatalf("hooks --post-pull = %+v", res)
@@ -377,7 +377,7 @@ func TestHooksOpPostPull(t *testing.T) {
 		t.Fatal("post_clone hook ran for --post-pull")
 	}
 
-	none := kept(t, KeptRepo{Repo: rem.url, Destination: dest})
+	none := kept(t, keptRepoSpec{Repo: rem.url, Destination: dest})
 	if res := HooksOp(Options{}, PostPull)(ctx, none); res.Outcome != NoHooks || res.Label() != "no post_pull hooks" {
 		t.Fatalf("no hooks = %+v", res)
 	}

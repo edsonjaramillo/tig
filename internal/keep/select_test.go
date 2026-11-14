@@ -1,6 +1,7 @@
 package keep
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -27,6 +28,9 @@ func TestSelect(t *testing.T) {
 		{"ambiguous is an error", []string{"dotfiles", "tig"}, nil, []string{`"dotfiles" is ambiguous: use one of me/dotfiles, you/dotfiles`}},
 		{"unknown is an error", []string{"nope", "org/api"}, nil, []string{`"nope" matches no kept repo`}},
 		{"all problems reported", []string{"nope", "dotfiles", "tig"}, nil, []string{`"nope"`, `"dotfiles"`}},
+	}
+	if _, err := Select(nil, []string{"tig"}); !errors.Is(err, ErrEmpty) {
+		t.Errorf("empty keep list: err = %v, want ErrEmpty", err)
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

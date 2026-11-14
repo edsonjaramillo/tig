@@ -47,7 +47,7 @@ with pull requests take fewer keystrokes.`,
 	}
 	root.PersistentFlags().StringVar(&a.configFlag, "config", "",
 		"path to the tig config (default $TIG_CONFIG, $XDG_CONFIG_HOME/tig.yaml, or ~/.config/tig.yaml)")
-	root.AddCommand(newKeepCmd(a))
+	root.AddCommand(newConfigCmd(a), newKeepCmd(a))
 	root.SetArgs(argv)
 	return root
 }

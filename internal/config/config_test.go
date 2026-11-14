@@ -36,6 +36,8 @@ keep:
 		{"hooks not a list", "keep:\n  repos:\n    - repo: a/b\n      destination: /x\n      post_pull: {a: b}\n", "must be a list of commands, not a mapping", 0},
 		{"keep not a mapping", "keep: [1]\n", "keep must be a mapping with protocol and repos, not a list", 0},
 		{"invalid", "keep:\n  repos:\n    - repo: a/b\n", "destination is required", 0},
+		{"second document", "keep: {}\n---\nkep: {}\n", `line 2: only one YAML document is allowed`, 0},
+		{"trailing document separator", "keep: {}\n---\n", `only one YAML document is allowed`, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -49,8 +51,8 @@ keep:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(cfg.Keep.Repos) != tt.repos {
-				t.Fatalf("repos = %d, want %d", len(cfg.Keep.Repos), tt.repos)
+			if len(cfg.Keep) != tt.repos {
+				t.Fatalf("repos = %d, want %d", len(cfg.Keep), tt.repos)
 			}
 		})
 	}
@@ -61,7 +63,7 @@ func TestParseResolvesSSH(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := cfg.Keep.Repos[0].CloneURL; got != "git@github.com:a/b.git" {
+	if got := cfg.Keep[0].CloneURL; got != "git@github.com:a/b.git" {
 		t.Errorf("CloneURL = %q", got)
 	}
 }
