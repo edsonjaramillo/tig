@@ -21,31 +21,44 @@ const (
 	ProtocolSSH   = "ssh"
 )
 
-// KeepList is the `keep:` section of the tig config.
+// ErrEmpty is returned when the keep list declares no kept repos.
+var ErrEmpty = errors.New("the keep list is empty; add repos with `tig config edit`")
+
+// KeepList is the `keep:` section of the tig config, as written by the user.
+// Resolve turns it into kept repos.
 type KeepList struct {
 	// Protocol applies to shorthand repos: "https" (default) or "ssh".
-	Protocol string     `yaml:"protocol"`
-	Repos    []KeptRepo `yaml:"repos"`
+	Protocol string         `yaml:"protocol"`
+	Repos    []keptRepoSpec `yaml:"repos"`
 }
 
-// KeptRepo is one entry in the keep list.
-type KeptRepo struct {
+// keptRepoSpec is one entry of the keep list as written in the tig config.
+type keptRepoSpec struct {
 	Repo        string   `yaml:"repo"`
 	Destination string   `yaml:"destination"`
 	Branch      string   `yaml:"branch"`
 	PostClone   []string `yaml:"post_clone"`
 	PostPull    []string `yaml:"post_pull"`
-
-	// Resolved by KeepList.Validate.
-	Name     string     `yaml:"-"` // repo name: owner/repo
-	CloneURL string     `yaml:"-"`
-	Dir      string     `yaml:"-"` // expanded, absolute destination
-	Remote   git.Remote `yaml:"-"` // parsed clone URL
 }
 
-// Validate checks the keep list and resolves each kept repo's Name, CloneURL,
-// and Dir. All problems are reported together.
-func (k *KeepList) Validate() error {
+// KeptRepo is one resolved entry in the keep list.
+type KeptRepo struct {
+	Name      string     // repo name: owner/repo
+	CloneURL  string     // URL passed to git clone
+	Remote    git.Remote // parsed clone URL
+	Dir       string     // destination: expanded and absolute
+	Branch    string     // declared default branch; "" means the remote's HEAD
+	PostClone []string
+	PostPull  []string
+}
+
+// Resolve checks the keep list and returns its kept repos. All problems are
+// reported together.
+//
+// Destinations are compared case-insensitively on every platform, so the
+// result does not depend on the filesystem of the machine running it; two
+// destinations differing only in case are a mistake either way.
+func (k KeepList) Resolve() ([]KeptRepo, error) {
 	var errs []error
 	fail := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf(format, args...))
@@ -57,18 +70,20 @@ func (k *KeepList) Validate() error {
 		fail("keep.protocol: %q is not https or ssh", k.Protocol)
 	}
 
+	repos := make([]KeptRepo, len(k.Repos))
 	names := map[string]int{}
 	dirs := map[string]int{}
-	for i := range k.Repos {
-		r := &k.Repos[i]
+	for i, s := range k.Repos {
+		r := &repos[i]
+		r.Branch, r.PostClone, r.PostPull = s.Branch, s.PostClone, s.PostPull
 		where := fmt.Sprintf("keep.repos[%d]", i)
-		if r.Repo != "" {
-			where += " (" + r.Repo + ")"
+		if s.Repo != "" {
+			where += " (" + s.Repo + ")"
 		}
 
-		if strings.TrimSpace(r.Repo) == "" {
+		if strings.TrimSpace(s.Repo) == "" {
 			fail("%s: repo is required", where)
-		} else if err := r.resolveRepo(k.Protocol); err != nil {
+		} else if err := r.resolveRepo(s.Repo, k.Protocol); err != nil {
 			fail("%s: %v", where, err)
 		} else {
 			key := strings.ToLower(r.Name)
@@ -79,48 +94,52 @@ func (k *KeepList) Validate() error {
 			}
 		}
 
-		if strings.TrimSpace(r.Destination) == "" {
+		if strings.TrimSpace(s.Destination) == "" {
 			fail("%s: destination is required", where)
-		} else if dir, err := ExpandDestination(r.Destination); err != nil {
+		} else if dir, err := ExpandDestination(s.Destination); err != nil {
 			fail("%s: destination: %v", where, err)
 		} else {
 			r.Dir = dir
-			if j, dup := dirs[dir]; dup {
+			key := strings.ToLower(dir)
+			if j, dup := dirs[key]; dup {
 				fail("%s: destination %s duplicates keep.repos[%d]", where, dir, j)
 			} else {
-				dirs[dir] = i
+				dirs[key] = i
 			}
 		}
 
-		if r.Branch != "" && (strings.ContainsAny(r.Branch, " \t\n~^:?*[\\") || strings.HasPrefix(r.Branch, "-")) {
-			fail("%s: branch %q is not a valid branch name", where, r.Branch)
+		if s.Branch != "" && (strings.ContainsAny(s.Branch, " \t\n~^:?*[\\") || strings.HasPrefix(s.Branch, "-")) {
+			fail("%s: branch %q is not a valid branch name", where, s.Branch)
 		}
-		for _, h := range r.PostClone {
+		for _, h := range s.PostClone {
 			if strings.TrimSpace(h) == "" {
 				fail("%s: post_clone contains an empty command", where)
 			}
 		}
-		for _, h := range r.PostPull {
+		for _, h := range s.PostPull {
 			if strings.TrimSpace(h) == "" {
 				fail("%s: post_pull contains an empty command", where)
 			}
 		}
 	}
 
-	// Nested destinations.
-	for i := range k.Repos {
-		for j := range k.Repos {
-			a, b := k.Repos[i].Dir, k.Repos[j].Dir
+	// Nested destinations. O(n²) is fine at realistic keep list sizes.
+	for i := range repos {
+		for j := range repos {
+			a, b := strings.ToLower(repos[i].Dir), strings.ToLower(repos[j].Dir)
 			if i == j || a == "" || b == "" || a == b {
 				continue
 			}
 			if isInside(b, a) {
-				fail("keep.repos[%d]: destination %s is nested inside keep.repos[%d] destination %s", j, b, i, a)
+				fail("keep.repos[%d]: destination %s is nested inside keep.repos[%d] destination %s", j, repos[j].Dir, i, repos[i].Dir)
 			}
 		}
 	}
 
-	return errors.Join(errs...)
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
+	}
+	return repos, nil
 }
 
 // isInside reports whether child is strictly inside parent.

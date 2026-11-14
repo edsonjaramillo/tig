@@ -21,10 +21,6 @@ declared default branch, and hook counts. It reads only the tig config.`,
 				return err
 			}
 			out := cmd.OutOrStdout()
-			if len(repos) == 0 {
-				outln(cmd.ErrOrStderr(), "the keep list is empty; add repos with `tig keep edit`")
-				return nil
-			}
 			tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 			outln(tw, "REPO\tURL\tDESTINATION\tBRANCH\tHOOKS")
 			for _, r := range repos {

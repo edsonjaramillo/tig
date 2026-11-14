@@ -25,15 +25,26 @@ type section struct {
 // Keys are derived from the types themselves so renames cannot silently
 // break the lookup.
 var sections = map[string]section{
-	typeName(Config{}):          {in: "at the top level", want: "a mapping", keys: yamlKeys(Config{})},
-	typeName(keep.KeepList{}):   {name: "keep", in: "in keep", want: "a mapping with protocol and repos", keys: yamlKeys(keep.KeepList{})},
-	typeName(keep.KeptRepo{}):   {in: "in a keep.repos entry", want: "a mapping with repo, destination, ...", keys: yamlKeys(keep.KeptRepo{})},
-	typeName([]keep.KeptRepo{}): {name: "keep.repos", want: "a list of repos", hint: `start each repo with "- ", e.g. "- repo: owner/repo"`},
-	typeName([]string{}):        {name: "post_clone/post_pull", want: "a list of commands", hint: "e.g. [task build] or one \"- command\" per line"},
-	typeName(""):                {want: "a single value"},
+	typeOf(file{}).String():                {in: "at the top level", want: "a mapping", keys: yamlKeys(typeOf(file{}))},
+	typeOf(keep.KeepList{}).String():       {name: "keep", in: "in keep", want: "a mapping with protocol and repos", keys: yamlKeys(typeOf(keep.KeepList{}))},
+	keptRepoSpec.String():                  {in: "in a keep.repos entry", want: "a mapping with repo, destination, ...", keys: yamlKeys(keptRepoSpec)},
+	reflect.SliceOf(keptRepoSpec).String(): {name: "keep.repos", want: "a list of repos", hint: `start each repo with "- ", e.g. "- repo: owner/repo"`},
+	typeOf([]string{}).String():            {name: "post_clone/post_pull", want: "a list of commands", hint: "e.g. [task build] or one \"- command\" per line"},
+	typeOf("").String():                    {want: "a single value"},
 }
 
-func typeName(v any) string { return reflect.TypeOf(v).String() }
+// keptRepoSpec is the (unexported) element type of keep.KeepList.Repos.
+var keptRepoSpec = fieldType(keep.KeepList{}, "Repos").Elem()
+
+func typeOf(v any) reflect.Type { return reflect.TypeOf(v) }
+
+func fieldType(v any, name string) reflect.Type {
+	f, ok := reflect.TypeOf(v).FieldByName(name)
+	if !ok {
+		panic(fmt.Sprintf("%T has no field %s", v, name))
+	}
+	return f.Type
+}
 
 var (
 	unknownField = regexp.MustCompile(`^line (\d+): field (\S+) not found in type (\S+)$`)
@@ -93,9 +104,8 @@ func humanizeLine(msg string) string {
 	return msg
 }
 
-// yamlKeys lists the decodable yaml keys of a struct.
-func yamlKeys(v any) []string {
-	t := reflect.TypeOf(v)
+// yamlKeys lists the decodable yaml keys of a struct type.
+func yamlKeys(t reflect.Type) []string {
 	var keys []string
 	for i := range t.NumField() {
 		tag, _, _ := strings.Cut(t.Field(i).Tag.Get("yaml"), ",")

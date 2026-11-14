@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -33,7 +34,27 @@ It is additive only: it never deletes or overwrites anything.`,
 		newKeepRunCmd(a),
 		newKeepStatusCmd(a),
 	)
+	for _, sub := range c.Commands() {
+		handleEmpty(sub)
+	}
 	return c
+}
+
+// handleEmpty makes an empty keep list a hint rather than a failure: the
+// command prints keep.ErrEmpty and exits 0.
+func handleEmpty(c *cobra.Command) {
+	run := c.RunE
+	if run == nil {
+		return
+	}
+	c.RunE = func(cmd *cobra.Command, args []string) error {
+		err := run(cmd, args)
+		if errors.Is(err, keep.ErrEmpty) {
+			outln(cmd.ErrOrStderr(), err)
+			return nil
+		}
+		return err
+	}
 }
 
 // actionFlags are the common flags of commands that act on kept repos.
@@ -81,32 +102,23 @@ func warn(cmd *cobra.Command, format string, args ...any) {
 }
 
 // selectRepos loads the config and selects kept repos by name. Unknown or
-// ambiguous names are an error. It returns no repos when the keep list is
-// empty.
+// ambiguous names are an error, and an empty keep list is keep.ErrEmpty.
 func (a *app) selectRepos(cmd *cobra.Command, names []string) ([]keep.KeptRepo, error) {
 	cfg, err := a.loadConfig(cmd)
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.Keep.Repos) == 0 {
-		return nil, nil
-	}
-	return keep.Select(cfg.Keep.Repos, names)
+	return keep.Select(cfg.Keep, names)
 }
 
 // runOp runs op over the selected kept repos, streams per-repo results, and
-// ends with a summary line. It returns nil results when the keep list is
-// empty.
+// ends with a summary line.
 func (a *app) runOp(cmd *cobra.Command, names []string, jobs int, op keep.Op) ([]keep.Result, error) {
 	repos, err := a.selectRepos(cmd, names)
 	if err != nil {
 		return nil, err
 	}
 	out := cmd.OutOrStdout()
-	if len(repos) == 0 {
-		outln(cmd.ErrOrStderr(), "the keep list is empty; add repos with `tig keep edit`")
-		return nil, nil
-	}
 	emit := func(r keep.Result) { printResult(out, r) }
 	results := keep.Run(cmd.Context(), repos, jobs, op, emit)
 	outln(out, keep.Summary(results))
@@ -138,7 +150,7 @@ func (a *app) completeRepoNames(cmd *cobra.Command, args []string, toComplete st
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	repos := cfg.Keep.Repos
+	repos := cfg.Keep
 	given := map[string]bool{}
 	for _, arg := range args {
 		if sel, err := keep.Select(repos, []string{arg}); err == nil {

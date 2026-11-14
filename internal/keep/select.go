@@ -9,8 +9,12 @@ import (
 // Select returns the kept repos matching names, in keep list order. A name
 // matches a full repo name (owner/repo) or, when unique, just the repo part.
 // No names selects every kept repo. Every unknown or ambiguous name is
-// reported in the returned error, and nothing is selected.
+// reported in the returned error, and nothing is selected. An empty keep list
+// is ErrEmpty.
 func Select(repos []KeptRepo, names []string) ([]KeptRepo, error) {
+	if len(repos) == 0 {
+		return nil, ErrEmpty
+	}
 	if len(names) == 0 {
 		return repos, nil
 	}
