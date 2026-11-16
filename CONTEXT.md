@@ -47,3 +47,9 @@ _Avoid_: Update hook
 **Tig config**:
 The single YAML file holding configuration for all tig features, each under its own top-level key.
 _Avoid_: Settings, dotfile
+
+### Repo
+
+**Active account**:
+The GitHub account the gh CLI is currently authenticated as. `tig repo` commands act on repos owned by it.
+_Avoid_: User, current user
